@@ -7,15 +7,18 @@ from tqdm import tqdm
 
 dataroot = '/data/tanglv/data/fss-te'
 outroot = 'outputs/fss-te/'
-datasets = ['fold1','fold2','fold3']
+datasets = ['fold3']
 outlist = [
-           'match_point_ref0.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
-           'ref_manual2.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
-           'ref_manual2.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
-        #    'ref0.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
-        #    'ref1.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
-        #    'ref2.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
-        #    'ref3.txt_x_x_x_erosion_32_4_32_4_SD_0.1_[0.3, 0.2, 0.1]',
+           'match_point_ref0.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'ref_manual2.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'ref_manual3.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'ref0.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'ref1.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'ref2.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'ref3.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'x_refimg0_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'x_refimg1_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'x_refimg2_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4'
            ]
 
 for dataset in datasets:
