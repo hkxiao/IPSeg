@@ -3,17 +3,16 @@
 start_program() {
     export CUDA_VISIBLE_DEVICES=$1
     python  opensam_fss.py --sam_type vit_h  \
-        --data /data/tanglv/data/fss-te/fold3 \
-        --ref_img $2 \
+        --data /data/tanglv/data/fss-te/fold0 \
+        --ref_txt $2 \
         --erosion \
         --sd_weight=0.1 \
         --sd_layer_weight=0.3,0.2,0.1
 }
 
 # 设置GPU列表
-CUDA_VISIBLE_DEVICES_LIST=(3 4 5)
+CUDA_VISIBLE_DEVICES_LIST=(0 1 2 3)
 ref_txts=(ref0.txt ref1.txt ref2.txt ref3.txt)
-ref_img=(refimg0 refimg1 refimg2)
 PID_LIST=()
 STATUS=()
 
@@ -23,7 +22,7 @@ do
     echo "Start: ${start[i]}"
     echo "End ${end[i]}"
     echo "GPU ${CUDA_VISIBLE_DEVICES_LIST[i]}"
-    start_program ${CUDA_VISIBLE_DEVICES_LIST[i]} ${ref_img[i]}  &
+    start_program ${CUDA_VISIBLE_DEVICES_LIST[i]} ${ref_txts[i]}  &
     PID_LIST+=($!)
     STATUS+=(-1)
 done
