@@ -129,7 +129,8 @@ def main():
     suffix += '_SD' + '_'+str(args.sd_weight)
     if args.pca: suffix+='_pca'
     if args.copca: suffix+='_copca'
-
+    suffix+='_'+str(args.sd_layer_weight)
+    
     #trick suffix
     if args.erosion: suffix += '_erosion'
     if args.oneshot: suffix += '_oneshot'
@@ -139,7 +140,6 @@ def main():
     #prompt suffix
     suffix += '_'+str(args.ptopk)+'_'+str(args.pt)+'_'+str(args.ntopk)+'_'+str(args.nt)
 
-    suffix+='_'+str(args.sd_layer_weight)
     output_path = './outputs/' + '/' + args.outdir + '/' +args.data.split('/')[-1] + '/' + suffix 
     Path(output_path).mkdir(parents=True, exist_ok=True)
     logger = open(output_path+'/log.txt','w') 
@@ -151,7 +151,7 @@ def main():
         sam_type, sam_ckpt = 'vit_b', '/data/tanglv/Ad-SAM/2023-9-7/Ad-Sam-Main/sam-continue-learning/pretrained_checkpoint/sam_vit_b_01ec64.pth'
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
     elif args.sam_type == 'vit_h':
-        sam_type, sam_ckpt = 'vit_h', 'sam_vit_h_4b8939.pth'
+        sam_type, sam_ckpt = 'vit_h', 'pretrained/sam_vit_h_4b8939.pth'
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
     elif args.sam_type == 'vit_t':
         sam_type, sam_ckpt = 'vit_t', 'weights/mobile_sam.pt'
