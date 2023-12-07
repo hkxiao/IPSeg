@@ -1,7 +1,7 @@
-export CUDA_VISIBLE_DEVICES=-
+export CUDA_VISIBLE_DEVICES=1
 python  opensam_fss.py --sam_type vit_h  \
-    --data /data/tanglv/data/fss-te/fold0 \
-    --ref_txt=ref_manual3.txt \
+    --data /data/tanglv/data/fss-te/perseg \
+    --ref_txt=ref_composed.txt \
     --erosion \
     --ptopk=32 \
     --pt=4 \
