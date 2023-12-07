@@ -74,7 +74,6 @@ def compute_iou(preds, target): #N 1 H W
     return iou.item() / len(preds)
 
 def get_arguments():
-    #CUDA_VISIBLE_DEVICES=0 python persam_dino_kmeans.py
     parser = argparse.ArgumentParser()
     
     #ref setting
@@ -83,6 +82,13 @@ def get_arguments():
     parser.add_argument('--ref_sed', default='x')
     parser.add_argument('--ref_idx', default='x')
     
+    #sd setting
+    parser.add_argument('--sd_weight', type=float, default=0.)
+    parser.add_argument('--sd_layer_weight', type=str, default="1,1,1")
+    parser.add_argument('--pca', action='store_true')
+    parser.add_argument('--copca', action='store_true')
+    
+    ## feature interaction setting
     #trick setting
     parser.add_argument('--oneshot', action='store_true')
     parser.add_argument('--matting', action='store_true')
@@ -96,21 +102,16 @@ def get_arguments():
     parser.add_argument('--ntopk', type=int, default=32)
     parser.add_argument('--nt', type=int, default=4)
     
-    #sd setting
-    parser.add_argument('--sd_weight', type=float, default=0.)
-    parser.add_argument('--sd_layer_weight', type=str, default="1,1,1")
-    parser.add_argument('--pca', action='store_true')
-    parser.add_argument('--copca', action='store_true')
+    #sam setting
+    parser.add_argument('--sam_type', type=str, default='vit_h')
     
     #base setting
     parser.add_argument('--data', type=str, default='/data/tanglv/data/fss-te/fold0')
-    parser.add_argument('--sam_type', type=str, default='vit_h')
     parser.add_argument('--outdir', type=str, default='fss-te')
-    parser.add_argument('--save', action='store_true')
+    parser.add_argument('--visualize', action='store_true')
     parser.add_argument('--start', default=0,type=int)
     parser.add_argument('--end', default=-1,type=int)
     
-
     args = parser.parse_args()
     args.sd_layer_weight = args.sd_layer_weight.split(',')
     args.sd_layer_weight = [float(x) for x in args.sd_layer_weight]
@@ -121,10 +122,16 @@ def main():
     args = get_arguments()
     print("Args:", args)
     
+    #prepare path
     images_path = args.data + '/imgs/'
     
     #ref suffix
     suffix = args.ref_txt+'_'+args.ref_img + '_' + args.ref_sed + '_' + args.ref_idx
+    
+    #sd suffix    
+    suffix += '_SD' + '_'+str(args.sd_weight)
+    if args.pca: suffix+='_pca'
+    if args.copca: suffix+='_copca'
     
     #trick suffix
     if args.erosion: suffix += '_erosion'
@@ -135,13 +142,6 @@ def main():
     #prompt suffix
     suffix += '_'+str(args.ptopk)+'_'+str(args.pt)+'_'+str(args.ntopk)+'_'+str(args.nt)
 
-    #sd suffix    
-    suffix += '_SD' + '_'+str(args.sd_weight)
-    if args.pca: suffix+='_pca'
-    if args.copca: suffix+='_copca'
-    
-    suffix+='_'+str(args.sd_layer_weight)
-    suffix+='_'+str(args.start)+'_'+str(args.end)
     output_path = './outputs/' + '/' + args.outdir + '/' +args.data.split('/')[-1] + '/' + suffix 
     Path(output_path).mkdir(parents=True, exist_ok=True)
     with open(output_path+'/log.txt','a+') as logger:
@@ -417,7 +417,7 @@ def persam(args, images_path,  output_path):
             plt.axis('off')
 
             vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}_{str(class_id)}.jpg')
-            if args.save:
+            if args.visualize:
                 with open(vis_mask_output_path, 'wb') as outfile:
                     plt.savefig(outfile, format='jpg')
             

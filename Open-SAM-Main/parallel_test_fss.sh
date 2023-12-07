@@ -1,19 +1,19 @@
-#!/bin/bash
+#! /bin/bash
 
 start_program() {
     export CUDA_VISIBLE_DEVICES=$1
     python  opensam_fss.py --sam_type vit_h  \
-        --data /data/tanglv/data/fss-te/fold1 \
-        --ref_txt $2 \
+        --data /data/tanglv/data/fss-te/fold2 \
+        --ref_img $2 \
         --erosion \
         --sd_weight=0.1 \
         --sd_layer_weight=0.3,0.2,0.1
 }
 
 # 设置GPU列表
-CUDA_VISIBLE_DEVICES_LIST=(7)
+CUDA_VISIBLE_DEVICES_LIST=(3 4 5)
 ref_txts=(match_point_ref0.txt)
-
+ref_img=(refimg0 refimg1 refimg2)
 PID_LIST=()
 STATUS=()
 
@@ -23,7 +23,7 @@ do
     echo "Start: ${start[i]}"
     echo "End ${end[i]}"
     echo "GPU ${CUDA_VISIBLE_DEVICES_LIST[i]}"
-    start_program ${CUDA_VISIBLE_DEVICES_LIST[i]} ${ref_txts[i]}  &
+    start_program ${CUDA_VISIBLE_DEVICES_LIST[i]} ${ref_img[i]}  &
     PID_LIST+=($!)
     STATUS+=(-1)
 done
@@ -42,6 +42,7 @@ do
         elif ps -p $process_id > /dev/null; then
             echo "进程 $process_id 正在执行"
             finish=false
+        fi
     done
     if [ $finish == true ]; then
         break
