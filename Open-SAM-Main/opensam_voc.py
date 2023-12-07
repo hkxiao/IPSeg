@@ -30,7 +30,6 @@ def co_pca(feat1, feat2, target_dim=256):
     #split
     return reduced_feat[:size1], reduced_feat[size1:]
 
-
 def pca(feat, target_dim=256):
     mean = torch.mean(feat, dim=0, keepdim=True) #hw C
     centered_feat = feat - mean #hw C
@@ -132,7 +131,6 @@ def main():
     suffix += '_SD' + '_'+str(args.sd_weight)
     if args.pca: suffix+='_pca'
     if args.copca: suffix+='_copca'
-    
     #trick suffix
     if args.erosion: suffix += '_erosion'
     if args.oneshot: suffix += '_oneshot'
@@ -141,7 +139,8 @@ def main():
     
     #prompt suffix
     suffix += '_'+str(args.ptopk)+'_'+str(args.pt)+'_'+str(args.ntopk)+'_'+str(args.nt)
-
+    
+    suffix+='_'+str(args.sd_layer_weight)
     output_path = './outputs/' + '/' + args.outdir + '/' +args.data.split('/')[-1] + '/' + suffix 
     Path(output_path).mkdir(parents=True, exist_ok=True)
     with open(output_path+'/log.txt','a+') as logger:
@@ -154,14 +153,13 @@ def main():
         unseen_ids = [34, 41, 100, 57, 87, 33, 25, 21, 149, 172, 169, 124, 148, 106, 145]
         #frisbee, skateboard, cardboard, carrot, scissors, suitcase, giraffe, cow, road, wall concrete, tree, grass, river, clouds, playingfield
     if 'VOC' in args.data:
-        unseen_ids = [37,52,94,112,150]
+        unseen_ids = [37, 52, 94, 112, 150]
         #potted plant, Tv-monitor, cow, sofa, train
     if 'pcontext' in args.data:
-        unseen_ids = [14,19,33,48]
+        unseen_ids = [14, 19, 33, 48]
         #cat cow moterbikt sofa
-    
-    
-    persam(args,  images_path,  output_path)
+
+    opensam(args,  images_path,  output_path)
                    
       
 def get_point(correlation_map, topk, t): # N k H W
@@ -178,7 +176,7 @@ def get_point(correlation_map, topk, t): # N k H W
     return max_centers        
   
        
-def persam(args, images_path,  output_path):
+def opensam(args, images_path,  output_path):
     output_path = os.path.join(output_path)
     os.makedirs(output_path, exist_ok=True)
     print("\n------------> Segment " )
@@ -189,8 +187,10 @@ def persam(args, images_path,  output_path):
     global_iou, global_cnt = 0, 0
     global_unique_list = []
     
-    #enumrate class_id
+    #enumerate class_id for target feat
     for class_id in range(0,255):
+        if class_id not in unseen_ids: continue
+        
         # prepare ref_name
         if args.ref_txt!='x': # to do
             with open (os.path.join(args.data,args.ref_txt),'r') as f:
@@ -253,7 +253,7 @@ def persam(args, images_path,  output_path):
         class_iou[class_id], class_cnt[class_id] = 0, 0
         
     global_unique_list = list(set(global_unique_list))
-        
+    
     #load segment anything model
     print("======> Load SAM" )
     if args.sam_type == 'vit_b':
@@ -272,13 +272,8 @@ def persam(args, images_path,  output_path):
     print('======> Start Testing')
     test_images_path = images_path    
     test_files = sorted(os.listdir(test_images_path))
-
-    if args.end==-1: args.end = len(os.listdir(test_images_path))-1
-    args.end = min(args.end, len(os.listdir(test_images_path))-1)  
       
-    for idx in tqdm(range(args.start,args.end+1)):
-        # print(i)
-        # raise NameError
+    for idx in tqdm(range(len(os.listdir(test_images_path)))):
         test_idx = test_files[idx]
         # Load test img 
         test_idx = test_idx[:-4]
@@ -292,7 +287,6 @@ def persam(args, images_path,  output_path):
         test_mask_path = test_images_path.replace('imgs','gts') + '/' + test_idx + '.png'
         test_masks = cv2.imread(test_mask_path,0)
         test_masks = cv2.resize(test_masks,(1024,1024),interpolation=cv2.INTER_NEAREST)
-        # test_masks = cv2.cvtColor(test_masks, cv2.COLOR_BGR2GRAY)
         test_masks = torch.tensor(test_masks).cuda().unsqueeze(0).unsqueeze(0) # [1 1 H W]
                         
         # Load test feat
@@ -321,15 +315,11 @@ def persam(args, images_path,  output_path):
 
         unique_list = torch.unique(test_masks)
         unique_list = [x.item() for x in unique_list]
-        
-        # if unique_list[-1]==255: unique_list = unique_list[:-1]
-        # if 'coco-stuff' in args.data: unique_list=unique_list[:-1]
-        # if 'pcontext' in args.data: unique_list=unique_list[:-1]
-        # if 'VOC2012' in args.data: unique_list=unique_list[1:-1]
-    
+            
         for class_id in unique_list:
             if class_id not in unseen_ids: continue
-            #prepare matched target and test
+         
+            #prepare matched target feat
             test_mask = torch.zeros_like(test_masks)
             test_mask[test_masks==class_id]=1
             target_feat1, target_feat2 = target_feat_dict[class_id][0], target_feat_dict[class_id][1]
@@ -363,9 +353,10 @@ def persam(args, images_path,  output_path):
             p_coords=tmp_p_coords 
             n_coords=tmp_n_coords 
             
-            #input prompt
+            # input prompt
             p_coords, n_coords = p_coords*1024/60+1024/120, n_coords*1024/60+1024/120
             
+            # prepare sam input
             examples = []
             example = {}
             example['image'] = test_img_torch
@@ -374,6 +365,7 @@ def persam(args, images_path,  output_path):
             example['original_size'] = (1024, 1024)
             examples.append(example)
             
+            # sam process
             with torch.no_grad():
                 output = sam(examples, multimask_output=False)[0]
                 masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
@@ -395,13 +387,11 @@ def persam(args, images_path,  output_path):
                 output = sam(examples, multimask_output=True)[0]
                 masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
                 
-                # print(masks.shape, low_res_logits.shape, iou_predictions.shape)
                 
             best_idx = torch.argmax(iou_predictions[0]).item()
             final_mask = masks[:,best_idx:best_idx+1,...]
             final_mask_np = final_mask.squeeze().cpu().numpy()
             
-            #print(final_mask.shape, test_mask.shape, final_mask.max(), test_mask.max())
             iou = compute_iou(final_mask, test_mask)
             
             class_cnt[class_id] += 1
@@ -409,20 +399,19 @@ def persam(args, images_path,  output_path):
             global_cnt += 1
             global_iou += iou
             
-            plt.figure(figsize=(10, 10))
-            plt.imshow(test_image)
-            show_mask(final_mask_np, plt.gca())    
-            show_points(example['point_coords'][0].cpu().numpy(), example['point_labels'][0].cpu().numpy(), plt.gca())
-            plt.title(f"Mask {best_idx}", fontsize=18)
-            plt.axis('off')
-
-            vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}_{str(class_id)}.jpg')
-            if args.visualize:
+            if args.visualize:  
+                vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}_{str(class_id)}.jpg')          
+                plt.figure(figsize=(10, 10))
+                plt.imshow(test_image)
+                show_mask(final_mask_np, plt.gca())    
+                show_points(example['point_coords'][0].cpu().numpy(), example['point_labels'][0].cpu().numpy(), plt.gca())
+                plt.title(f"Mask {best_idx}", fontsize=18)
+                plt.axis('off')
                 with open(vis_mask_output_path, 'wb') as outfile:
                     plt.savefig(outfile, format='jpg')
             
-            mask_output_path = os.path.join(output_path, test_idx + '_' +str(class_id) +'.png')
-            if args.save: cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
+                mask_output_path = os.path.join(output_path, test_idx + '_' +str(class_id) +'.png')
+                cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
         
         if global_cnt: 
             print("miou", global_iou/global_cnt)
@@ -430,8 +419,10 @@ def persam(args, images_path,  output_path):
                 logger.write(str(idx)+ " miou:"+ str(global_iou/global_cnt) +'\n')
     
     with open(output_path+'/log.txt','a') as logger:    
-        logger.write("\n\nAll INFO:\n")    
-        if class_cnt[class_id]: logger.write( str(class_id)+' '+args.ref_img+' '+str(class_iou[class_id]/class_cnt[class_id])+'\n')
+        logger.write("\n\nAll INFO:\n") 
+        for class_id in unseen_ids:
+            if class_cnt[class_id]: 
+                logger.write( str(class_id)+' '+args.ref_img+' '+str(class_iou[class_id]/class_cnt[class_id])+'\n')
         logger.write('miou: '+str(global_iou/global_cnt)+'\n')
         
 

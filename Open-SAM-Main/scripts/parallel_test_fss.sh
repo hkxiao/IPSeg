@@ -3,7 +3,11 @@
 start_program() {
     export CUDA_VISIBLE_DEVICES=$1
     python  opensam_fss.py --sam_type vit_h  \
+<<<<<<< HEAD:Open-SAM-Main/parallel_test_fss.sh
         --data /data/tanglv/data/fss-te/fold2 \
+=======
+        --data /data/tanglv/data/fss-te/fss \
+>>>>>>> 50195d7efcf692ac437c325f8235e7995af0cd96:Open-SAM-Main/scripts/parallel_test_fss.sh
         --ref_img $2 \
         --erosion \
         --sd_weight=0.1 \
@@ -11,8 +15,13 @@ start_program() {
 }
 
 # 设置GPU列表
+<<<<<<< HEAD:Open-SAM-Main/parallel_test_fss.sh
 CUDA_VISIBLE_DEVICES_LIST=(3 4 5)
 ref_txts=(match_point_ref0.txt)
+=======
+CUDA_VISIBLE_DEVICES_LIST=(0 1 2 3)
+ref_txts=(ref0.txt ref1.txt ref2.txt ref3.txt)
+>>>>>>> 50195d7efcf692ac437c325f8235e7995af0cd96:Open-SAM-Main/scripts/parallel_test_fss.sh
 ref_img=(refimg0 refimg1 refimg2)
 PID_LIST=()
 STATUS=()
