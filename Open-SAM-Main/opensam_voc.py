@@ -131,6 +131,7 @@ def main():
     suffix += '_SD' + '_'+str(args.sd_weight)
     if args.pca: suffix+='_pca'
     if args.copca: suffix+='_copca'
+    
     #trick suffix
     if args.erosion: suffix += '_erosion'
     if args.oneshot: suffix += '_oneshot'
@@ -145,7 +146,6 @@ def main():
     Path(output_path).mkdir(parents=True, exist_ok=True)
     with open(output_path+'/log.txt','a+') as logger:
         logger.write("\n======>>>\n"+str(datetime.now())+'\n')
-    
     
     #unseen id
     global unseen_ids
@@ -422,7 +422,7 @@ def opensam(args, images_path,  output_path):
         logger.write("\n\nAll INFO:\n") 
         for class_id in unseen_ids:
             if class_cnt[class_id]: 
-                logger.write( str(class_id)+' '+args.ref_img+' '+str(class_iou[class_id]/class_cnt[class_id])+'\n')
+                logger.write( str(class_id)+' '+args.ref_img+'/ref_'+str(class_id)+' '+str(class_iou[class_id]/class_cnt[class_id])+'\n')
         logger.write('miou: '+str(global_iou/global_cnt)+'\n')
         
 

@@ -82,6 +82,12 @@ def get_arguments():
     parser.add_argument('--ref_sed', default='x')
     parser.add_argument('--ref_idx', default='x')
     
+    #sd setting
+    parser.add_argument('--sd_weight', type=float, default=0.)
+    parser.add_argument('--sd_layer_weight', type=str, default="1,1,1")
+    parser.add_argument('--pca', action='store_true')
+    parser.add_argument('--copca', action='store_true')
+    
     #trick setting
     parser.add_argument('--oneshot', action='store_true')
     parser.add_argument('--matting', action='store_true')
@@ -95,17 +101,13 @@ def get_arguments():
     parser.add_argument('--ntopk', type=int, default=32)
     parser.add_argument('--nt', type=int, default=4)
     
-    #sd setting
-    parser.add_argument('--sd_weight', type=float, default=0.)
-    parser.add_argument('--sd_layer_weight', type=str, default="1,1,1")
-    parser.add_argument('--pca', action='store_true')
-    parser.add_argument('--copca', action='store_true')
+    # sam setting
+    parser.add_argument('--sam_type', type=str, default='vit_h')
     
     #base setting
     parser.add_argument('--data', type=str, default='/data/tanglv/data/fss-te/fold0')
-    parser.add_argument('--sam_type', type=str, default='vit_h')
     parser.add_argument('--outdir', type=str, default='fss-te')
-    parser.add_argument('--save', action='store_true')
+    parser.add_argument('--visualize', action='store_true')
     
     args = parser.parse_args()
     args.sd_layer_weight = args.sd_layer_weight.split(',')
@@ -117,11 +119,17 @@ def main():
     args = get_arguments()
     print("Args:", args)
     
+    # prepare path
     images_path = args.data + '/imgs/'
     
     #ref suffix
     suffix = args.ref_txt+'_'+args.ref_img + '_' + args.ref_sed + '_' + args.ref_idx
-    
+
+    #sd suffix    
+    suffix += '_SD' + '_'+str(args.sd_weight)
+    if args.pca: suffix+='_pca'
+    if args.copca: suffix+='_copca'
+
     #trick suffix
     if args.erosion: suffix += '_erosion'
     if args.oneshot: suffix += '_oneshot'
@@ -131,15 +139,25 @@ def main():
     #prompt suffix
     suffix += '_'+str(args.ptopk)+'_'+str(args.pt)+'_'+str(args.ntopk)+'_'+str(args.nt)
 
-    #sd suffix    
-    suffix += '_SD' + '_'+str(args.sd_weight)
-    if args.pca: suffix+='_pca'
-    if args.copca: suffix+='_copca'
-    
     suffix+='_'+str(args.sd_layer_weight)
     output_path = './outputs/' + '/' + args.outdir + '/' +args.data.split('/')[-1] + '/' + suffix 
     Path(output_path).mkdir(parents=True, exist_ok=True)
     logger = open(output_path+'/log.txt','w') 
+    
+    
+    #load segment anything model
+    print("======> Load SAM" )
+    if args.sam_type == 'vit_b':
+        sam_type, sam_ckpt = 'vit_b', '/data/tanglv/Ad-SAM/2023-9-7/Ad-Sam-Main/sam-continue-learning/pretrained_checkpoint/sam_vit_b_01ec64.pth'
+        sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
+    elif args.sam_type == 'vit_h':
+        sam_type, sam_ckpt = 'vit_h', 'sam_vit_h_4b8939.pth'
+        sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
+    elif args.sam_type == 'vit_t':
+        sam_type, sam_ckpt = 'vit_t', 'weights/mobile_sam.pt'
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).to(device=device)
+        sam.eval()
     
     global sum_iou, sum_cnt, group_iou, group_cnt
     
@@ -147,7 +165,7 @@ def main():
         #obj_name = '4'
         if ".DS" not in obj_name:
             group_iou,group_cnt = 0,0
-            persam(args, obj_name, images_path,  output_path, logger)
+            opensam(sam ,args, obj_name, images_path,  output_path, logger)
             sum_iou += group_iou
             sum_cnt += group_cnt
             print(obj_name,"miou",group_iou/group_cnt)    
@@ -171,7 +189,7 @@ def get_point(correlation_map, topk, t): # N k H W
     
     return max_centers        
         
-def persam(args, obj_name, images_path,  output_path, logger):
+def opensam(sam, args, obj_name, images_path,  output_path, logger):
     print("\n------------> Segment " + obj_name)
     
     # prepare ref_name
@@ -189,7 +207,9 @@ def persam(args, obj_name, images_path,  output_path, logger):
             args.ref_idx = random.randint(0,len(os.listdir(os.path.join(images_path, obj_name)))-1)
         ref_name = sorted(os.listdir(os.path.join(images_path, obj_name)))[int(args.ref_idx)][:-4]
     print("\n------------> ref_name:", ref_name) 
-    logger.write(obj_name+' '+ref_name)    
+    
+    if args.ref_img!='x': logger.write(obj_name+' '+args.ref_img+'/'+ref_name)  
+    else: logger.write(obj_name+' '+ref_name)    
 
     # prepare ref_feat_path and ref_mask_path
     if args.ref_img!='x': ref_feat_path = os.path.join(images_path.replace("imgs",args.ref_img), ref_name + '.pth')
@@ -226,34 +246,20 @@ def persam(args, obj_name, images_path,  output_path, logger):
         ref_feat2[k]= F.interpolate(v,size=(60,60),mode='nearest').squeeze().permute(1,2,0)
         if args.pca: ref_feat2[k] = pca(ref_feat2[k].view(3600,-1)).view(60,60,-1)
     
-    #get target feat1
+    # get target feat1
     target_feat1 = ref_feat1[ref_mask>0.5]  # N C   
     target_feat1 = target_feat1.mean(0).unsqueeze(0) # N C -> 1 C
     target_feat1 = target_feat1 / target_feat1.norm(dim=-1, keepdim=True) # 1 C
     
-    #get target feat2  
+    # get target feat2  
     target_feat2 = {}
     for k,v in ref_feat2.items():
         target_feat2[k] = v[ref_mask>0.5] # N C
         target_feat2[k] = target_feat2[k].mean(0).unsqueeze(0) # N C -> 1 C
         target_feat2[k] = target_feat2[k] / target_feat2[k].norm(dim=-1, keepdim=True) # 1 C
-
-    #load segment anything model
-    print("======> Load SAM" )
-    if args.sam_type == 'vit_b':
-        sam_type, sam_ckpt = 'vit_b', '/data/tanglv/Ad-SAM/2023-9-7/Ad-Sam-Main/sam-continue-learning/pretrained_checkpoint/sam_vit_b_01ec64.pth'
-        sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
-    elif args.sam_type == 'vit_h':
-        sam_type, sam_ckpt = 'vit_h', 'sam_vit_h_4b8939.pth'
-        sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
-    elif args.sam_type == 'vit_t':
-        sam_type, sam_ckpt = 'vit_t', 'weights/mobile_sam.pt'
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).to(device=device)
-        sam.eval()
     
     # start testing
-    print('======> Start Testing')
+    print('======> Start Testing',obj_name)
     test_images_path = os.path.join(images_path, obj_name)    
     for test_idx in tqdm(sorted(os.listdir(test_images_path))):
 
@@ -326,16 +332,16 @@ def persam(args, obj_name, images_path,  output_path, logger):
         #input prompt
         p_coords, n_coords = p_coords*1024/60+1024/120, n_coords*1024/60+1024/120
         
+        # sam input
         examples = []
         example = {}
         example['image'] = test_img_torch
-        #print(test_img_torch.shape)
         example['point_coords'] = torch.cat([p_coords,n_coords]).unsqueeze(0)
         example['point_labels'] = torch.cat([torch.ones(p_coords.shape[0]),torch.zeros(n_coords.shape[0])]).unsqueeze(0).cuda().to(torch.float32)                
         example['original_size'] = (1024, 1024)
         examples.append(example)
-        #print(example['point_coords'].shape,example['point_labels'].shape)
         
+        # sam process
         with torch.no_grad():
             output = sam(examples, multimask_output=False)[0]
             masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
@@ -356,32 +362,30 @@ def persam(args, obj_name, images_path,  output_path, logger):
             
             output = sam(examples, multimask_output=True)[0]
             masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
-            
-        # print(masks.shape, low_res_logits.shape, iou_predictions.shape)
-        
+                    
         best_idx = torch.argmax(iou_predictions[0]).item()
         final_mask = masks[:,best_idx:best_idx+1,...]
         final_mask_np = final_mask.squeeze().cpu().numpy()
         
         global group_cnt, group_iou
         group_cnt = group_cnt + 1
-        #print(final_mask.shape,test_mask.shape)
         group_iou += compute_iou(final_mask, test_mask)
         
-        #save
-        plt.figure(figsize=(10, 10))
-        plt.imshow(test_image)
-        show_mask(final_mask_np, plt.gca())    
-        show_points(example['point_coords'][0].cpu().numpy(), example['point_labels'][0].cpu().numpy(), plt.gca())
-        plt.title(f"Mask {best_idx}", fontsize=18)
-        plt.axis('off')
-        vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}.jpg')
-        if args.save:
+        #visualize
+        if args.visualize:
+            plt.figure(figsize=(10, 10))
+            plt.imshow(test_image)
+            show_mask(final_mask_np, plt.gca())    
+            show_points(example['point_coords'][0].cpu().numpy(), example['point_labels'][0].cpu().numpy(), plt.gca())
+            plt.title(f"Mask {best_idx}", fontsize=18)
+            plt.axis('off')
+            vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}.jpg')
+            
             with open(vis_mask_output_path, 'wb') as outfile:
                 plt.savefig(outfile, format='jpg')
         
-        mask_output_path = os.path.join(output_path, test_idx + '.png')
-        if args.save: cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
+            mask_output_path = os.path.join(output_path, test_idx + '.png')
+            cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
         
 def point_selection(mask_sim, topk=1):
     # Top-1 point selection
