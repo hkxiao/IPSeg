@@ -388,7 +388,7 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
             with open(vis_mask_output_path, 'wb') as outfile:
                 plt.savefig(outfile, format='jpg')
         
-            mask_output_path = os.path.join(output_path, test_idx + '.png')
+            mask_output_path = os.path.join(output_path, test_idx + '.jpg')
             cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
         
 def point_selection(mask_sim, topk=1):
