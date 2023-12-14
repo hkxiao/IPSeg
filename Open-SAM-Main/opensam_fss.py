@@ -213,12 +213,16 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
 
     # prepare ref_feat_path and ref_mask_path
     if args.ref_img!='x': ref_feat_path = os.path.join(images_path.replace("imgs",args.ref_img), ref_name + '.pth')
+    elif '/' in ref_name: ref_feat_path = os.path.join(images_path.replace("imgs/", ref_name) +  '.pth')
     else: ref_feat_path = os.path.join(images_path.replace("imgs",'sd_raw+dino_feat'), obj_name, ref_name + '.pth')
     
     if args.oneshot:
         ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','gts').replace('pth','png')
     else:
         ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
+    
+    # print(ref_mask_path,ref_feat_path)
+    # raise NameError
     
     output_path = os.path.join(output_path, obj_name)
     os.makedirs(output_path, exist_ok=True)
