@@ -16,8 +16,8 @@ start_program() {
 
 # 设置GPU列表
 CUDA_VISIBLE_DEVICES_LIST=(0 1 2 3)
-topk=(32 32 32 32)
-t=(2 8 16 32)
+topk=(4 8 16 64)
+t=(4 4 4 4)
 PID_LIST=()
 STATUS=()
 

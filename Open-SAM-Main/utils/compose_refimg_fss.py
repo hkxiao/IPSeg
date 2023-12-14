@@ -7,15 +7,10 @@ from tqdm import tqdm
 
 dataroot = '/data/tanglv/data/fss-te'
 outroot = 'outputs/fss-te/'
-datasets = ['fold3']
+datasets = ['fss']
 outlist = [
            'match_point_ref0.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
-           'ref_manual2.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
-           'ref_manual3.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
-           'ref0.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
-           'ref1.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
-           'ref2.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
-           'ref3.txt_x_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
+           'x_x_x_1_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
            'x_refimg0_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
            'x_refimg1_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4',
            'x_refimg2_x_x_SD_0.1_[0.3, 0.2, 0.1]_erosion_32_4_32_4'

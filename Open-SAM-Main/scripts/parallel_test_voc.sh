@@ -8,14 +8,15 @@ start_program() {
         --ref_img $2 \
         --erosion \
         --sd_weight=0.1 \
-        --sd_layer_weight=0.3,0.2,0.1 
+        --sd_layer_weight=0.3,0.2,0.1 \
+        --visualize
 }
 
 
-
 # 设置GPU列表
-CUDA_VISIBLE_DEVICES_LIST=(4 5 6 7)
+CUDA_VISIBLE_DEVICES_LIST=(0 1 2 3)
 ref_txts=(match_point_ref0.txt)
+ref_img=(refimg4 refimg5 refimg6 refimg7)
 ref_img=(refimg0 refimg1 refimg2 refimg3)
 PID_LIST=()
 STATUS=()
