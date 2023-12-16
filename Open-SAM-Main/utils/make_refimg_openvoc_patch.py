@@ -4,18 +4,21 @@ from pathlib import Path
 import random
 import numpy as np
 from tqdm import tqdm
+import argparse
 
-seed=12
-random.seed(seed)
+parser = argparse.ArgumentParser()
+parser.add_argument('--seed',type=int,default=0)
+parser.add_argument('--datasets',nargs='+',type=str)
+args = parser.parse_args()
+
+random.seed(args.seed)
 
 root = '/data/tanglv/data/openvoc-te/'
-#datasets = ['coco-stuff','pcontext','VOC2012']
-datasets = ['coco-stuff']
+seed = args.seed
+datasets = args.datasets
 
 
-
-
-for dataset in datasets:
+for dataset in args.datasets:
     
     if 'coco-stuff' in dataset:
         unseen_ids = [33, 40, 99, 56, 86, 32, 24, 20, 148, 171, 168, 123, 147, 105, 144]
