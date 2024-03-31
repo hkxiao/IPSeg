@@ -197,6 +197,7 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         with open (os.path.join(args.data,args.ref_txt),'r') as f:
             lines = f.readlines()
             for line in lines:
+                # print(line)
                 x = line.split(' ') 
                 if x[0] == obj_name:
                     ref_name = x[1][:-1]
@@ -217,11 +218,15 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
     else: ref_feat_path = os.path.join(images_path.replace("imgs",'sd_raw+dino_feat'), obj_name, ref_name + '.pth')
     
     if args.oneshot:
+        print("one shot setting")
         ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','gts').replace('pth','png')
     else:
-        ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
+        if "sd_raw+dino_feat" in ref_feat_path:
+            ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
+        else:
+            ref_mask_path = ref_feat_path.replace('.pth','_a2w.png')
     
-    # print(ref_mask_path,ref_feat_path)
+    print(ref_mask_path,ref_feat_path)
     # raise NameError
     
     output_path = os.path.join(output_path, obj_name)
@@ -229,6 +234,7 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
 
     # load ref_mask
     ref_mask = cv2.imread(ref_mask_path)
+    print(ref_mask_path)
     ref_mask = cv2.cvtColor(ref_mask, cv2.COLOR_BGR2GRAY)
     ref_mask = torch.tensor(ref_mask).cuda().unsqueeze(0).unsqueeze(0).to(torch.float32) # 1 1 H W
     ref_mask = F.interpolate(ref_mask, size=(60,60), mode="nearest") #1 1 h w
