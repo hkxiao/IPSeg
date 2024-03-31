@@ -162,7 +162,7 @@ def main():
     global sum_iou, sum_cnt, group_iou, group_cnt
     
     for obj_name in tqdm(sorted(os.listdir(images_path))):
-        #obj_name = '4'
+        # obj_name = '32'
         if ".DS" not in obj_name:
             group_iou,group_cnt = 0,0
             opensam(sam ,args, obj_name, images_path,  output_path, logger)
@@ -171,7 +171,7 @@ def main():
             print(obj_name,"miou",group_iou/group_cnt)    
             logger.write(' '+str(group_iou/group_cnt)+'\n')    
             print("Now ALL miou",sum_iou/sum_cnt)
-            #break
+            # break
     
     logger.write("All miou: "+str(sum_iou/sum_cnt)+'\n')    
     logger.close()
@@ -215,12 +215,13 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
     if args.ref_img!='x': ref_feat_path = os.path.join(images_path.replace("imgs",args.ref_img), ref_name + '.pth')
     elif '/' in ref_name: ref_feat_path = os.path.join(images_path.replace("imgs/", ref_name) +  '.pth')
     else: ref_feat_path = os.path.join(images_path.replace("imgs",'sd_raw+dino_feat'), obj_name, ref_name + '.pth')
+    print('ref_feat_path: ', ref_feat_path)
     
     if args.oneshot:
         ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','gts').replace('pth','png')
     else:
         ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
-    
+    print('ref_mask_path: ', ref_mask_path)
     # print(ref_mask_path,ref_feat_path)
     # raise NameError
     

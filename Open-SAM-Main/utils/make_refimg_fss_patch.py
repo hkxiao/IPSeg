@@ -4,10 +4,10 @@ from pathlib import Path
 import random
 import numpy as np
 
-random_seed = 2
+random_seed = 9
 random.seed(random_seed)
 
-data_path = '/data/tanglv/data/fss-te/perseg/'
+data_path = '/data/tanglv/data/fss-te/fold0/'
 img_root = data_path + 'imgs/'
 gt_root = data_path + 'gts/'
 ref_root = data_path + 'refimg'+str(random_seed)

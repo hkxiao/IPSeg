@@ -5,12 +5,12 @@ import random
 import numpy as np
 from tqdm import tqdm
 
-seed=2
+seed=7
 random.seed(seed)
 
-root = '/data/tanglv/data/openvoc-te/'
+root = '/data/tanglv/data/fss-te/'
 #datasets = ['coco-stuff','pcontext','VOC2012']
-datasets = ['pcontext']
+datasets = ['coco-stuff']
 
 for dataset in datasets:
     img_root = os.path.join(root,dataset,'imgs')

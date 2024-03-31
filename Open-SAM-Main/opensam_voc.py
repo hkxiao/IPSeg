@@ -163,7 +163,7 @@ def main():
                    
       
 def get_point(correlation_map, topk, t): # N k H W
-    fix_randseed(0)        
+    fix_randseed(1)        
     correlation_max = torch.max(correlation_map, dim=1)[0] # N H W
     ranged_index = torch.argsort(torch.flatten(correlation_max, -2), 1, descending=True) #N HW
     coords = torch.stack([ranged_index[:,:topk]%60,ranged_index[:,:topk]/60],-1) #N topk 2
