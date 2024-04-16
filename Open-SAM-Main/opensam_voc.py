@@ -131,6 +131,7 @@ def main():
     suffix += '_SD' + '_'+str(args.sd_weight)
     if args.pca: suffix+='_pca'
     if args.copca: suffix+='_copca'
+    suffix+='_'+str(args.sd_layer_weight)
     
     #trick suffix
     if args.erosion: suffix += '_erosion'
@@ -141,7 +142,6 @@ def main():
     #prompt suffix
     suffix += '_'+str(args.ptopk)+'_'+str(args.pt)+'_'+str(args.ntopk)+'_'+str(args.nt)
     
-    suffix+='_'+str(args.sd_layer_weight)
     output_path = './outputs/' + '/' + args.outdir + '/' +args.data.split('/')[-1] + '/' + suffix 
     Path(output_path).mkdir(parents=True, exist_ok=True)
     with open(output_path+'/log.txt','a+') as logger:
@@ -150,11 +150,11 @@ def main():
     #unseen id
     global unseen_ids
     if 'coco-stuff' in args.data:
-        unseen_ids = [34, 41, 100, 57, 87, 33, 25, 21, 149, 172, 169, 124, 148, 106, 145]
+        unseen_ids = [33, 40, 99, 56, 86, 32, 24, 20, 148, 171, 168, 123, 147, 105, 144]
         #frisbee, skateboard, cardboard, carrot, scissors, suitcase, giraffe, cow, road, wall concrete, tree, grass, river, clouds, playingfield
-    if 'VOC' in args.data:
-        unseen_ids = [37, 52, 94, 112, 150]
-        #potted plant, Tv-monitor, cow, sofa, train
+    if 'VOC2012' in args.data:
+        unseen_ids = [16384, 16512, 8404992, 49152, 8437760]
+        #potted plant, Tv-monitor, sheep, sofa, train
     if 'pcontext' in args.data:
         unseen_ids = [14, 19, 33, 48]
         #cat cow moterbikt sofa
@@ -188,8 +188,7 @@ def opensam(args, images_path,  output_path):
     global_unique_list = []
     
     #enumerate class_id for target feat
-    for class_id in range(0,255):
-        if class_id not in unseen_ids: continue
+    for class_id in unseen_ids:
         
         # prepare ref_name
         if args.ref_txt!='x': # to do
@@ -260,7 +259,7 @@ def opensam(args, images_path,  output_path):
         sam_type, sam_ckpt = 'vit_b', '/data/tanglv/Ad-SAM/2023-9-7/Ad-Sam-Main/sam-continue-learning/pretrained_checkpoint/sam_vit_b_01ec64.pth'
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
     elif args.sam_type == 'vit_h':
-        sam_type, sam_ckpt = 'vit_h', 'sam_vit_h_4b8939.pth'
+        sam_type, sam_ckpt = 'vit_h', 'pretrained/sam_vit_h_4b8939.pth'
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
     elif args.sam_type == 'vit_t':
         sam_type, sam_ckpt = 'vit_t', 'weights/mobile_sam.pt'
@@ -285,8 +284,18 @@ def opensam(args, images_path,  output_path):
         
         # Load test mask
         test_mask_path = test_images_path.replace('imgs','gts') + '/' + test_idx + '.png'
-        test_masks = cv2.imread(test_mask_path,0)
-        test_masks = cv2.resize(test_masks,(1024,1024),interpolation=cv2.INTER_NEAREST)
+        
+        if 'VOC2012' in args.data:
+            print(test_mask_path)
+            test_masks = cv2.imread(test_mask_path,1)
+            test_masks = cv2.resize(test_masks,(1024,1024),interpolation=cv2.INTER_NEAREST)
+            test_masks = test_masks.astype(np.int32)
+            test_masks = test_masks[:,:,0] + test_masks[:,:,1]*256 + test_masks[:,:,2]*256*256
+            #print(test_masks.shape)
+        else:
+            test_masks = cv2.imread(test_mask_path,0)
+            test_masks = cv2.resize(test_masks,(1024,1024),interpolation=cv2.INTER_NEAREST)
+            
         test_masks = torch.tensor(test_masks).cuda().unsqueeze(0).unsqueeze(0) # [1 1 H W]
                         
         # Load test feat
@@ -398,7 +407,7 @@ def opensam(args, images_path,  output_path):
             class_iou[class_id] += iou
             global_cnt += 1
             global_iou += iou
-            
+                        
             if args.visualize:  
                 vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}_{str(class_id)}.jpg')          
                 plt.figure(figsize=(10, 10))

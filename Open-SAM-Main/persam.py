@@ -40,10 +40,10 @@ def get_arguments():
     #CUDA_VISIBLE_DEVICES=0 python persam.py
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='/data/tanglv/data/fss-te/perseg')
-    parser.add_argument('--outdir', type=str, default='persam/perseg(vit-b)')
+    parser.add_argument('--outdir', type=str, default='persam/perseg')
     parser.add_argument('--ref_idx', type=int, default=0)
-    parser.add_argument('--sam_type', type=str, default='vit_b')
-    parser.add_argument('--sam_pth', type=str, default='')   
+    parser.add_argument('--sam_type', type=str, default='vit_h')
+    parser.add_argument('--sam_pth', type=str, default='pretrained/sam_vit_h_4b8939.pth')   
     args = parser.parse_args()
     return args
 
@@ -95,7 +95,7 @@ def persam(args, obj_name, images_path, masks_path, output_path):
         sam_type, sam_ckpt = 'vit_b', args.sam_pth
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
     elif args.sam_type == 'vit_h':
-        sam_type, sam_ckpt = 'vit_h', 'sam_vit_h_4b8939.pth'
+        sam_type, sam_ckpt = 'vit_h', args.sam_pth
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).cuda()
     elif args.sam_type == 'vit_t':
         sam_type, sam_ckpt = 'vit_t', 'weights/mobile_sam.pt'
@@ -121,10 +121,11 @@ def persam(args, obj_name, images_path, masks_path, output_path):
     
     print('======> Start Testing')
     for test_idx in tqdm((os.listdir(test_images_path))):
-    
+        
         # Load test image
         test_idx = test_idx[:-4]
         test_image_path = test_images_path + '/' + test_idx + '.jpg'
+        #print(test_image_path)
         test_image = cv2.imread(test_image_path)
         test_image = cv2.cvtColor(test_image, cv2.COLOR_BGR2RGB)
 

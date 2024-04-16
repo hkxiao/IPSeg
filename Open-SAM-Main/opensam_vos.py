@@ -50,29 +50,143 @@ def fix_randseed(seed):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     
+def db_eval_iou(annotation,segmentation):
 
-def compute_iou(preds, target): #N 1 H W
-    def mask_iou(pred_label,label):
-        '''
-        calculate mask iou for pred_label and gt_label
-        '''
+    """ Compute region similarity as the Jaccard Index.
+    Arguments:
+        annotation   (ndarray): binary annotation   map.
+        segmentation (ndarray): binary segmentation map.
+    Return:
+        jaccard (float): region similarity
+ """
 
-        pred_label = (pred_label>0.5)[0].int()
-        label = (label>0.5)[0].int()
+    annotation   = annotation.astype(np.bool)
+    segmentation = segmentation.astype(np.bool)
 
-        intersection = ((label * pred_label) > 0).sum()
-        union = ((label + pred_label) > 0).sum()
-        return intersection / union
-    
-    assert target.shape[1] == 1, 'only support one mask per image now'
-    if(preds.shape[2]!=target.shape[2] or preds.shape[3]!=target.shape[3]):
-        postprocess_preds = F.interpolate(preds, size=target.size()[2:], mode='bilinear', align_corners=False)
+    if np.isclose(np.sum(annotation),0) and np.isclose(np.sum(segmentation),0):
+        return 1
     else:
-        postprocess_preds = preds
-    iou = 0
-    for i in range(0,len(preds)):
-        iou = iou + mask_iou(postprocess_preds[i],target[i])
-    return iou.item() / len(preds)
+        return np.sum((annotation & segmentation)) / \
+                np.sum((annotation | segmentation),dtype=np.float32)
+
+def db_eval_boundary(foreground_mask,gt_mask,bound_th=0.008):
+    """
+    Compute mean,recall and decay from per-frame evaluation.
+    Calculates precision/recall for boundaries between foreground_mask and
+    gt_mask using morphological operators to speed it up.
+
+    Arguments:
+        foreground_mask (ndarray): binary segmentation image.
+        gt_mask         (ndarray): binary annotated image.
+
+    Returns:
+        F (float): boundaries F-measure
+        P (float): boundaries precision
+        R (float): boundaries recall
+    """
+    assert np.atleast_3d(foreground_mask).shape[2] == 1
+
+    bound_pix = bound_th if bound_th >= 1 else \
+            np.ceil(bound_th*np.linalg.norm(foreground_mask.shape))
+
+    # Get the pixel boundaries of both masks
+    fg_boundary = seg2bmap(foreground_mask);
+    gt_boundary = seg2bmap(gt_mask);
+
+    from skimage.morphology import binary_dilation,disk
+
+    fg_dil = binary_dilation(fg_boundary,disk(bound_pix))
+    gt_dil = binary_dilation(gt_boundary,disk(bound_pix))
+
+    # Get the intersection
+    gt_match = gt_boundary * fg_dil
+    fg_match = fg_boundary * gt_dil
+
+    # Area of the intersection
+    n_fg     = np.sum(fg_boundary)
+    n_gt     = np.sum(gt_boundary)
+
+    #% Compute precision and recall
+    if n_fg == 0 and  n_gt > 0:
+        precision = 1
+        recall = 0
+    elif n_fg > 0 and n_gt == 0:
+        precision = 0
+        recall = 1
+    elif n_fg == 0  and n_gt == 0:
+        precision = 1
+        recall = 1
+    else:
+        precision = np.sum(fg_match)/float(n_fg)
+        recall    = np.sum(gt_match)/float(n_gt)
+
+    # Compute F measure
+    if precision + recall == 0:
+        F = 0
+    else:
+        F = 2*precision*recall/(precision+recall);
+
+    return F
+
+def seg2bmap(seg,width=None,height=None):
+    """
+    From a segmentation, compute a binary boundary map with 1 pixel wide
+    boundaries.  The boundary pixels are offset by 1/2 pixel towards the
+    origin from the actual segment boundary.
+
+    Arguments:
+        seg     : Segments labeled from 1..k.
+        width	  :	Width of desired bmap  <= seg.shape[1]
+        height  :	Height of desired bmap <= seg.shape[0]
+
+    Returns:
+        bmap (ndarray):	Binary boundary map.
+
+     David Martin <dmartin@eecs.berkeley.edu>
+     January 2003
+ """
+
+    seg = seg.astype(np.bool)
+    seg[seg>0] = 1
+
+    assert np.atleast_3d(seg).shape[2] == 1
+
+    width  = seg.shape[1] if width  is None else width
+    height = seg.shape[0] if height is None else height
+
+    h,w = seg.shape[:2]
+
+    ar1 = float(width) / float(height)
+    ar2 = float(w) / float(h)
+
+    assert not (width>w | height>h | abs(ar1-ar2)>0.01),\
+            'Can''t convert %dx%d seg to %dx%d bmap.'%(w,h,width,height)
+
+    e  = np.zeros_like(seg)
+    s  = np.zeros_like(seg)
+    se = np.zeros_like(seg)
+
+    e[:,:-1]    = seg[:,1:]
+    s[:-1,:]    = seg[1:,:]
+    se[:-1,:-1] = seg[1:,1:]
+
+    b        = seg^e | seg^s | seg^se
+    b[-1,:]  = seg[-1,:]^e[-1,:]
+    b[:,-1]  = seg[:,-1]^s[:,-1]
+    b[-1,-1] = 0
+
+    if w == width and h == height:
+        bmap = b
+    else:
+        bmap = np.zeros((height,width))
+        for x in range(w):
+            for y in range(h):
+                if b[y,x]:
+                    j = 1+floor((y-1)+height / h)
+                    i = 1+floor((x-1)+width  / h)
+                    bmap[j,i] = 1;
+
+    return bmap
 
 def get_arguments():
     #CUDA_VISIBLE_DEVICES=0 python persam_dino_kmeans.py
@@ -173,22 +287,28 @@ def main():
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).to(device=device)
         sam.eval()
     
-    global sum_iou, sum_cnt, group_iou, group_cnt
+    global sum_iou, sum_f, sum_cnt, group_iou, group_f, group_cnt
     
     for obj_name in tqdm(sorted(os.listdir(images_path))):
         #print('fancy_boot')
-        # obj_name = 'earphone1'
+        #obj_name = 'fancy_boot'
         if ".DS" not in obj_name:
-            group_iou,group_cnt = 0,0
+            group_iou, group_f, group_cnt = 0, 0, 0
             opensam(sam ,args, obj_name, images_path,  output_path, logger)
             sum_iou += group_iou / group_cnt
+            sum_f += group_f / group_cnt
             sum_cnt += 1
-            print(obj_name,"miou",group_iou/group_cnt)    
-            logger.write(' '+str(group_iou/group_cnt)+'\n')    
+            print(obj_name,"miou",group_iou/group_cnt,'f',group_f/group_cnt)    
+            logger.write(' '+str(group_iou/group_cnt)+' '+str(group_f/group_cnt)+'\n')    
             print("Now ALL miou",sum_iou/sum_cnt)
+            print("Now ALL mf",sum_f/sum_cnt)
+
             # break
     
     logger.write("All miou: "+str(sum_iou/sum_cnt)+'\n')    
+    logger.write("All f: "+str(sum_f/sum_cnt)+'\n')    
+    logger.write("All j&f: "+str((sum_f+sum_iou)/sum_cnt/2)+'\n')    
+
     logger.close()
     
 def get_point(correlation_map, topk, t): # N k H W
@@ -243,17 +363,12 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         #     ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
         # else:
         #     ref_mask_path = ref_feat_path.replace('.pth','_tsdn.png')
-        
-    
-    print(ref_mask_path,ref_feat_path)
-    # raise NameError
-    
+            
     output_path = os.path.join(output_path, obj_name)
     os.makedirs(output_path, exist_ok=True)
 
     # load ref_mask
     ref_mask = cv2.imread(ref_mask_path)
-    print(ref_mask_path)
     ref_mask = cv2.cvtColor(ref_mask, cv2.COLOR_BGR2GRAY)
     ref_mask = torch.tensor(ref_mask).cuda().unsqueeze(0).unsqueeze(0).to(torch.float32) # 1 1 H W
     ref_mask = F.interpolate(ref_mask, size=(60,60), mode="nearest") #1 1 h w
@@ -429,13 +544,11 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         final_mask = masks[:,best_idx:best_idx+1,...]
         final_mask_np = final_mask.squeeze().cpu().numpy()
         
-        global group_cnt, group_iou
+        global group_cnt, group_iou, group_f
         group_cnt = group_cnt + 1
-        group_iou += compute_iou(final_mask, test_mask)
-        
-        
-        
-        
+        group_iou += db_eval_iou(final_mask.squeeze().detach().cpu().numpy(), test_mask.squeeze().detach().cpu().numpy())
+        group_f += db_eval_boundary(final_mask.squeeze().detach().cpu().numpy(), test_mask.squeeze().detach().cpu().numpy())
+               
         #visualize
         if args.visualize:
             plt.figure(figsize=(10, 10))
@@ -477,6 +590,7 @@ if __name__ == "__main__":
     global sum_iou, sum_cnt, group_iou, group_cnt
     sum_iou  = 0
     sum_cnt = 0
+    sum_f = 0
     group_iou = 0
     group_cnt = 0
     

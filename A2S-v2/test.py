@@ -98,9 +98,12 @@ def test_model(model, test_sets, config, epoch=None, saver=None):
                         tag = 'final'
                     fnl_folder = os.path.join(save_folder, tag)
                 check_path(fnl_folder)
-                #print(name)
+                print(name)
                 
-                im_path = os.path.join(fnl_folder, name.split('.')[0] + '.png')
+                im_path = os.path.join(fnl_folder, name.split('.')[0] + '_tsdn.png')
+                
+                # print(im_path)
+                # raise NameError
                 
                 tlist = im_path.split('/')
                 shufix = tlist[:-1]
@@ -109,7 +112,9 @@ def test_model(model, test_sets, config, epoch=None, saver=None):
                 if not os.path.exists(new_path):
                     os.makedirs(new_path)
                 
-                #print(im_path)
+                # print(im_path)
+                # raise NameError
+                # print(im_path)
                 Image.fromarray((pred * 255)).convert('L').save(im_path)
                 
                 if saver is not None:

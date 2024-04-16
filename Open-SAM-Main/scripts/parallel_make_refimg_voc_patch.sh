@@ -1,30 +1,16 @@
 #! /bin/bash
 
 start_program() {
-    export CUDA_VISIBLE_DEVICES=$1
-    python  opensam_fss.py --sam_type vit_h  \
-        --data /data/tanglv/data/fss-te/fss \
-        --ref_txt $2 \
-        --erosion \
-        --sd_weight=0.1 \
-        --sd_layer_weight=0.3,0.2,0.1
+    python  utils/make_refimg_openvoc_patch.py --seed $1 --dataset VOC2012
 }
 
 # 设置GPU列表
-CUDA_VISIBLE_DEVICES_LIST=(0)
-ref_txt=(ref_composed.txt)
-PID_LIST=()
-STATUS=()
+seed_list=(8 9 10 11 12 13 14 15)
 
 # run
-for i in $(seq 0 $((${#CUDA_VISIBLE_DEVICES_LIST[@]}-1)))
+for i in $(seq 0 $((${#seed_list[@]}-1)))
 do
-    echo "Start: ${start[i]}"
-    echo "End ${end[i]}"
-    echo "GPU ${CUDA_VISIBLE_DEVICES_LIST[i]}"
-    start_program ${CUDA_VISIBLE_DEVICES_LIST[i]} ${ref_txt[i]}  &
-    PID_LIST+=($!)
-    STATUS+=(-1)
+    start_program ${CUDA_VISIBLE_DEVICES_LIST[i]} ${seed_list[i]}  &
 done
 
 #check crash

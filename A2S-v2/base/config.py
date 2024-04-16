@@ -33,7 +33,7 @@ def base_config(cfg_dict):
     # Dataset setting
     parser.add_argument('--trset', default='cdot', help='Set the traing set')
     parser.add_argument('--vals', default='cr,dr,or,tr', help='Set the testing sets') # cr, ce, dr, de, or, oe # SOD,PASCAL-S,ECSSD,DUTS-TE,HKU-IS,DUT-OMRON
-    parser.add_argument('--data_path', default='/data/tanglv/data/openvoc-te/', help='The name of network')
+    parser.add_argument('--data_path', default='/data/tanglv/data/fss-te/', help='The name of network')
     #parser.add_argument('--modality', default='c', help='The name of network')
     # c: Color image, d: RGB-D, o: Optical flow (video)
     

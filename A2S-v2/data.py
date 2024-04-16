@@ -36,8 +36,9 @@ def get_color_list(name, config, phase):
     name_list = []
     
     
-    image_root = os.path.join(config['data_path'], name, 'refimg3')
-    
+    image_root = os.path.join(config['data_path'], name, 'refimg2')
+    #image_root = os.path.join(config['data_path'], name)
+    print(image_root)
     # img_list = []
     # for group in os.listdir(image_root):
     #     if group.startswith('.'): continue
@@ -50,7 +51,7 @@ def get_color_list(name, config, phase):
     #     img_list.extend(sub_list)
     
     img_list = os.listdir(image_root) 
-    img_list = [x for x in img_list if 'jpg' in x]
+    img_list = [x for x in img_list if 'jpg' in x and 'matting' not in x]
     
     # print(img_list)
     # raise NameError
@@ -190,7 +191,7 @@ def get_test_list(modes='cr', config=None):
         modal, subset = mode
         if subset == 'e':
             if modal == 'c':
-                test_list = ['coco-stuff','pcontext','VOC2012'] # , 'SOD'
+                test_list = ['fss'] # , 'SOD'
             elif modal == 'd':
                 #test_list = ['DUT', 'LFSD', 'NJUD', 'NLPR', 'RGBD135', 'SIP', 'SSD', 'STERE1000']
                 test_list = ['NJUD', 'NLPR', 'RGBD135', 'SIP']

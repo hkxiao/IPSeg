@@ -1,1 +1,1 @@
-python3 test.py cornet --gpus=7 --weight=cornet_rgb_duts_tr.pth  --vals=ce --save
+python3 test.py cornet --gpus=0 --weight=cornet_rgb_duts_tr.pth  --vals=ce --save

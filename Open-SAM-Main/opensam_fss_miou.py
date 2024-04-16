@@ -17,7 +17,7 @@ from kmeans_pytorch import kmeans
 import random
 from pathlib import Path
 from utils.evaluation import Evaluator
-from utils.logger import AverageMeter, Logger
+from utils.logger import AverageMeter
 
 def co_pca(feat1, feat2, target_dim=256):
     size1  = feat1.shape[0]
@@ -84,11 +84,6 @@ def get_arguments():
     parser.add_argument('--ref_sed', default='x')
     parser.add_argument('--ref_idx', default='x')
     
-    #vit setting 
-    parser.add_argument('--vit_type', type=str, default='dinov2')
-    parser.add_argument('--vit_size', type=str, default='vit_b')
-    parser.add_argument('--vit_weight', type=float, default=0.)
-
     #sd setting
     parser.add_argument('--sd_weight', type=float, default=0.)
     parser.add_argument('--sd_layer_weight', type=str, default="1,1,1")
@@ -97,8 +92,6 @@ def get_arguments():
     
     #trick setting
     parser.add_argument('--oneshot', action='store_true')
-    parser.add_argument('--zeroshot', action='store_true')
-
     parser.add_argument('--matting', action='store_true')
     parser.add_argument('--erosion', action="store_true")
     parser.add_argument('--prompt_filter', action="store_true")
@@ -119,6 +112,7 @@ def get_arguments():
     parser.add_argument('--visualize', action='store_true')
         
     args = parser.parse_args()
+    args.benchmark = args.data.split('/')[-1]
     
     args.sd_layer_weight = args.sd_layer_weight.split(',')
     args.sd_layer_weight = [float(x) for x in args.sd_layer_weight]
@@ -128,15 +122,15 @@ def get_arguments():
 def main():
     args = get_arguments()
     print("Args:", args)
-        
+    
+    global average_meter
+    average_meter = AverageMeter(args.benchmark)
+    
     # prepare path
     images_path = args.data + '/imgs/'
     
     #ref suffix
     suffix = args.ref_txt+'_'+args.ref_img + '_' + args.ref_sed + '_' + args.ref_idx
-
-    #vit suffix    
-    suffix += '_VIT_' + str(args.vit_type) +   '_' + str(args.vit_size) + '_' + str(args.vit_weight)
 
     #sd suffix    
     suffix += '_SD' + '_'+str(args.sd_weight)
@@ -147,7 +141,6 @@ def main():
     #trick suffix
     if args.erosion: suffix += '_erosion'
     if args.oneshot: suffix += '_oneshot'
-    if args.zeroshot: suffix += '_zeroshot'
     if args.prompt_filter: suffix += '_prompt-filter'
     if args.mask_filter: suffix += '_mask-filter'
     
@@ -173,20 +166,20 @@ def main():
         sam = sam_model_registry[sam_type](checkpoint=sam_ckpt).to(device=device)
         sam.eval()
     
-    global sum_iou, sum_cnt, group_iou, group_cnt
+    if args.benchmark == 'fss':
+        with open(os.path.join(args.data, '/splits/val.txt'), 'r') as f:
+            categories = f.read().split('\n')[:-1]
+            categories = sorted(categories)
+    
+    class_id = -1
     
     for obj_name in tqdm(sorted(os.listdir(images_path))):
         #print('fancy_boot')
-        # obj_name = 'earphone1'
         if ".DS" not in obj_name:
-            group_iou,group_cnt = 0,0
-            opensam(sam ,args, obj_name, images_path,  output_path, logger)
-            sum_iou += group_iou / group_cnt
-            sum_cnt += 1
-            print(obj_name,"miou",group_iou/group_cnt)    
-            logger.write(' '+str(group_iou/group_cnt)+'\n')    
-            print("Now ALL miou",sum_iou/sum_cnt)
-            # break
+            if 'fold' in args.benchmark: class_id = int(obj_name)
+            elif 'fss' == args.benchmark: class_id = categories.index(obj_name)
+            else: class_id = class_id + 1
+            opensam(sam ,args, obj_name, class_id,images_path,  output_path, logger)
     
     logger.write("All miou: "+str(sum_iou/sum_cnt)+'\n')    
     logger.close()
@@ -204,7 +197,7 @@ def get_point(correlation_map, topk, t): # N k H W
     
     return max_centers        
         
-def opensam(sam, args, obj_name, images_path,  output_path, logger):
+def opensam(sam, args, obj_name, class_id, images_path,  output_path, logger):
     print("\n------------> Segment " + obj_name)
     
     # prepare ref_name
@@ -237,13 +230,10 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         print("one shot setting")
         ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','gts').replace('pth','png')
     else:
-        ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
-
-        # if "sd_raw+dino_feat" in ref_feat_path:
-        #     ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
-        # else:
-        #     ref_mask_path = ref_feat_path.replace('.pth','_tsdn.png')
-        
+        if "sd_raw+dino_feat" in ref_feat_path:
+            ref_mask_path = ref_feat_path.replace('sd_raw+dino_feat','a2s').replace('pth','png')
+        else:
+            ref_mask_path = ref_feat_path.replace('.pth','_tsdn.png')
     
     print(ref_mask_path,ref_feat_path)
     # raise NameError
@@ -264,31 +254,10 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         ref_mask = -max_pool(-ref_mask)
     ref_mask = ref_mask.squeeze() # h w
     
-    if args.zeroshot:
-        ref_mask = torch.zeros_like(ref_mask)
-    
     # load ref_feat
     ref_all_feat = torch.load(ref_feat_path, map_location='cuda')
     sd_feat, dino_feat = ref_all_feat['sd_feat'], ref_all_feat['dino_feat'] #  [1 1 3600 768]  
     ref_feat1 = dino_feat.reshape(60,60,768)  
-    if args.vit_type == 'mae':
-        if 'sd_raw+dino_feat' in ref_feat_path:
-            ref_feat1 = torch.load(ref_feat_path.replace('sd_raw+dino_feat','mae_feats')).cuda()
-        else:
-            ref_feat1 = torch.load(ref_feat_path.replace('.pth','_mae.pth')).cuda()
-        ref_feat1 = ref_feat1[:,1:,:].permute(0,2,1)
-        ref_feat1 = F.interpolate(ref_feat1.reshape(1,768,14,14),(60,60),mode='bilinear',align_corners=False)
-        ref_feat1 = ref_feat1.squeeze().permute(1,2,0)
-    if args.vit_type == 'clip':
-        if 'sd_raw+dino_feat' in ref_feat_path:
-            ref_feat1 = torch.load(ref_feat_path.replace('sd_raw+dino_feat','clip_feats')).cuda()
-        else:
-            ref_feat1 = torch.load(ref_feat_path.replace('.pth','_clip.pth')).cuda()
-        print(ref_feat1.shape)
-        ref_feat1 = ref_feat1[:,1:,:].permute(0,2,1)
-        ref_feat1 = F.interpolate(ref_feat1.reshape(1,768,14,14),(60,60),mode='bilinear',align_corners=False)
-        ref_feat1 = ref_feat1.squeeze().permute(1,2,0)    
-    
     ref_feat2 = {}
     for k,v in sd_feat.items():
         #[1 1280 15 15] [1 1280 30 30] [1 640 60 60]-> [60 60 1280] [60 60 1280] [60 60 640] 
@@ -311,7 +280,7 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
     # start testing
     print('======> Start Testing',obj_name)
     test_images_path = os.path.join(images_path, obj_name)    
-    for test_idx in tqdm(sorted(os.listdir(test_images_path))):
+    for idx, test_idx in tqdm(enumerate(sorted(os.listdir(test_images_path)))):
         #print(test_idx)
         if not test_idx.endswith('jpg'): continue
         # Load test img 
@@ -336,17 +305,6 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         sd_feat, dino_feat = test_all_feat['sd_feat'], test_all_feat['dino_feat']
         
         test_feat1 = dino_feat.reshape(60,60,768)  
-        if args.vit_type == 'mae':
-            test_feat1 = torch.load(test_feat_path.replace('sd_raw+dino_feat','mae_feats')).cuda()
-            test_feat1 = test_feat1[:,1:,:].permute(0,2,1)
-            test_feat1 = F.interpolate(test_feat1.reshape(1,768,14,14),(60,60),mode='bilinear',align_corners=False)
-            test_feat1 = test_feat1.squeeze().permute(1,2,0)
-        if args.vit_type == 'clip':
-            test_feat1 = torch.load(test_feat_path.replace('sd_raw+dino_feat','clip_feats')).cuda()
-            test_feat1 = test_feat1[:,1:,:].permute(0,2,1)
-            test_feat1 = F.interpolate(test_feat1.reshape(1,768,14,14),(60,60),mode='bilinear',align_corners=False)
-            test_feat1 = test_feat1.squeeze().permute(1,2,0)
-      
         test_feat2 = {}
         for k,v in sd_feat.items():
             #[1 1280 15 15] [1 1280 30 30] [1 640 60 60]-> [60 60 1280] [60 60 1280] [60 60 640] 
@@ -375,7 +333,7 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
             sim2 += sim2_tmp.to(torch.float32) * args.sd_layer_weight[i]
 
         #get composed sim
-        sim = sim1 * args.vit_weight + sim2 * args.sd_weight
+        sim = sim1 + sim2 * args.sd_weight
         
         #get point prompt     
         p_coords, n_coords = get_point(sim,args.ptopk,args.pt), get_point(1-sim,args.ntopk,args.nt) # [1 t 2]
@@ -426,15 +384,20 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
             masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
                     
         best_idx = torch.argmax(iou_predictions[0]).item()
-        final_mask = masks[:,best_idx:best_idx+1,...]
+        final_mask = masks[:,best_idx:best_idx+1,...].to(torch.float32)
         final_mask_np = final_mask.squeeze().cpu().numpy()
         
-        global group_cnt, group_iou
-        group_cnt = group_cnt + 1
-        group_iou += compute_iou(final_mask, test_mask)
-        
-        
-        
+        # 3. Evaluate prediction
+        area_inter, area_union = Evaluator.classify_prediction(final_mask.clone(), test_mask)
+        print(area_inter, area_union)
+       # print(area_inter/area_union)
+        # print(area_inter.shape, area_union.shape)
+        # print(area_inter, area_union)
+        # raise NameError
+        average_meter.update(area_inter, area_union, torch.tensor(class_id).cuda(), loss=None)
+        # print(test_idx)
+        if idx == len(os.listdir(test_images_path)) -1:
+            average_meter.write_process(0, 0, epoch=-1, write_batch_idx=1)        
         
         #visualize
         if args.visualize:

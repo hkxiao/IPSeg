@@ -154,10 +154,9 @@ def main():
     #prompt suffix
     suffix += '_'+str(args.ptopk)+'_'+str(args.pt)+'_'+str(args.ntopk)+'_'+str(args.nt)
 
-    output_path = './outputs/' + '/' + args.outdir + '/' +args.data.split('/')[-1] + '/' + suffix 
+    output_path = './outputs/' + 'gts/' + '/' +args.data.split('/')[-1] + '/' + suffix 
     Path(output_path).mkdir(parents=True, exist_ok=True)
     logger = open(output_path+'/log.txt','w') 
-    
     
     #load segment anything model
     print("======> Load SAM" )
@@ -181,11 +180,6 @@ def main():
         if ".DS" not in obj_name:
             group_iou,group_cnt = 0,0
             opensam(sam ,args, obj_name, images_path,  output_path, logger)
-            sum_iou += group_iou / group_cnt
-            sum_cnt += 1
-            print(obj_name,"miou",group_iou/group_cnt)    
-            logger.write(' '+str(group_iou/group_cnt)+'\n')    
-            print("Now ALL miou",sum_iou/sum_cnt)
             # break
     
     logger.write("All miou: "+str(sum_iou/sum_cnt)+'\n')    
@@ -329,128 +323,21 @@ def opensam(sam, args, obj_name, images_path,  output_path, logger):
         test_mask = cv2.resize(test_mask,(1024,1024))
         test_mask = torch.tensor(test_mask).cuda().unsqueeze(0).unsqueeze(0) # [1 1 H W]
         test_mask[test_mask>0] =1
-        
-        # Load test feat
-        test_feat_path = test_images_path.replace('imgs','sd_raw+dino_feat') + '/' + test_idx + '.pth'
-        test_all_feat = torch.load(test_feat_path, map_location='cuda')
-        sd_feat, dino_feat = test_all_feat['sd_feat'], test_all_feat['dino_feat']
-        
-        test_feat1 = dino_feat.reshape(60,60,768)  
-        if args.vit_type == 'mae':
-            test_feat1 = torch.load(test_feat_path.replace('sd_raw+dino_feat','mae_feats')).cuda()
-            test_feat1 = test_feat1[:,1:,:].permute(0,2,1)
-            test_feat1 = F.interpolate(test_feat1.reshape(1,768,14,14),(60,60),mode='bilinear',align_corners=False)
-            test_feat1 = test_feat1.squeeze().permute(1,2,0)
-        if args.vit_type == 'clip':
-            test_feat1 = torch.load(test_feat_path.replace('sd_raw+dino_feat','clip_feats')).cuda()
-            test_feat1 = test_feat1[:,1:,:].permute(0,2,1)
-            test_feat1 = F.interpolate(test_feat1.reshape(1,768,14,14),(60,60),mode='bilinear',align_corners=False)
-            test_feat1 = test_feat1.squeeze().permute(1,2,0)
-      
-        test_feat2 = {}
-        for k,v in sd_feat.items():
-            #[1 1280 15 15] [1 1280 30 30] [1 640 60 60]-> [60 60 1280] [60 60 1280] [60 60 640] 
-            if k == 's2': continue
-            test_feat2[k]= F.interpolate(v,size=(60,60),mode='nearest').squeeze().permute(1,2,0)
-            if args.pca: test_feat2[k] = pca(test_feat2[k].view(3600,-1)).view(60,60,-1)
-
-        # Cosine similarity 1
-        test_feat1  = test_feat1.permute(2,0,1)
-        C, h, w = test_feat1.shape
-        test_feat1 = test_feat1 / test_feat1.norm(dim=0, keepdim=True) # C h w
-        test_feat1 = test_feat1.reshape(C, h * w) # C hw
-        sim1 = target_feat1 @ test_feat1 # [1 C] @ [C hw]
-        sim1 = sim1.reshape(1, 1, h, w)
-        
-        # Cosine similarity 2
-        sim2 = 0
-        for i,k in enumerate(test_feat2.keys()):
-            # s5 s4 s3
-            test_feat2[k]  = test_feat2[k].permute(2,0,1)
-            C, h, w = test_feat2[k].shape
-            test_feat2[k] = test_feat2[k] / test_feat2[k].norm(dim=0, keepdim=True) # C h w
-            test_feat2[k] = test_feat2[k].reshape(C, h * w) # C hw
-            sim2_tmp = target_feat2[k] @ test_feat2[k] # [1 C] @ [C hw]
-            sim2_tmp = sim2_tmp.reshape(1, 1, h, w)            
-            sim2 += sim2_tmp.to(torch.float32) * args.sd_layer_weight[i]
-
-        #get composed sim
-        sim = sim1 * args.vit_weight + sim2 * args.sd_weight
-        
-        #get point prompt     
-        p_coords, n_coords = get_point(sim,args.ptopk,args.pt), get_point(1-sim,args.ntopk,args.nt) # [1 t 2]
-        p_coords, n_coords = p_coords.view(args.pt,2),  n_coords.view(args.nt,2) # [t 2]
-        
-        #clear prompt
-        tmp_p_coords, tmp_n_coords = torch.empty(0,2).cuda(), torch.empty(0,2).cuda()
-        for p_coord in p_coords:            
-            if not torch.isnan(p_coord).any().item(): tmp_p_coords = torch.cat([tmp_p_coords, p_coord.unsqueeze(0)])
-        for n_coord in n_coords:            
-            if not torch.isnan(n_coord).any().item(): tmp_n_coords = torch.cat([tmp_n_coords, n_coord.unsqueeze(0)])
-        
-        p_coords=tmp_p_coords 
-        n_coords=tmp_n_coords 
-           
-        #input prompt
-        p_coords, n_coords = p_coords*1024/60+1024/120, n_coords*1024/60+1024/120
-        
-        # sam input
-        examples = []
-        example = {}
-        example['image'] = test_img_torch
-        example['point_coords'] = torch.cat([p_coords,n_coords]).unsqueeze(0)
-        example['point_labels'] = torch.cat([torch.ones(p_coords.shape[0]),torch.zeros(n_coords.shape[0])]).unsqueeze(0).cuda().to(torch.float32)                
-        example['original_size'] = (1024, 1024)
-        examples.append(example)
-        
-        # sam process
-        with torch.no_grad():
-            output = sam(examples, multimask_output=False)[0]
-            masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
-            
-            # Cascaded Post-refinement-1
-            best_idx = 0
-            examples[0]['mask_inputs'] = low_res_logits[:,best_idx:best_idx+1,...]
-            output = sam(examples, multimask_output=True)[0]
-            masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
-            
-            # Cascaded Post-refinement-2
-            best_idx = torch.argmax(iou_predictions[0]).item()
-            examples[0]['mask_inputs'] = low_res_logits[:,best_idx:best_idx+1,...]
-
-            y, x = torch.nonzero(masks[0,best_idx,...]).split(1,-1)
-            if x.shape[0]==0: examples[0]['boxes'] = torch.tensor([[0,1023,0,1023]]).cuda().to(torch.float32)
-            else: examples[0]['boxes'] = torch.tensor([[x.min(),y.min(),x.max(),y.max()]]).cuda().to(torch.float32)
-            
-            output = sam(examples, multimask_output=True)[0]
-            masks, low_res_logits, iou_predictions = output['masks'],output['low_res_logits'],output['iou_predictions']
-                    
-        best_idx = torch.argmax(iou_predictions[0]).item()
-        final_mask = masks[:,best_idx:best_idx+1,...]
-        final_mask_np = final_mask.squeeze().cpu().numpy()
-        
-        global group_cnt, group_iou
-        group_cnt = group_cnt + 1
-        group_iou += compute_iou(final_mask, test_mask)
-        
-        
-        
-        
+                
         #visualize
-        if args.visualize:
-            plt.figure(figsize=(10, 10))
-            plt.imshow(test_image)
-            show_mask(final_mask_np, plt.gca())    
-            show_points(example['point_coords'][0].cpu().numpy(), example['point_labels'][0].cpu().numpy(), plt.gca())
-            plt.title(f"Mask {best_idx}", fontsize=18)
-            plt.axis('off')
-            vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}.jpg')
-            
-            with open(vis_mask_output_path, 'wb') as outfile:
-                plt.savefig(outfile, format='jpg')
+        plt.figure(figsize=(10, 10))
+        plt.imshow(test_image)
+        show_mask(test_mask.detach().cpu().numpy(), plt.gca(),label_mode=True)    
+#            show_points(example['point_coords'][0].cpu().numpy(), example['point_labels'][0].cpu().numpy(), plt.gca())
+    #  plt.title(f"Mask {best_idx}", fontsize=18)
+        plt.axis('off')
+        vis_mask_output_path = os.path.join(output_path, f'vis_mask_{test_idx}.jpg')
         
-            mask_output_path = os.path.join(output_path, test_idx + '.jpg')
-            cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
+        with open(vis_mask_output_path, 'wb') as outfile:
+            plt.savefig(outfile, format='jpg')
+    
+        mask_output_path = os.path.join(output_path, test_idx + '.jpg')
+         #   cv2.imwrite(mask_output_path, final_mask_np.astype(np.uint8)*255)
         
 def point_selection(mask_sim, topk=1):
     # Top-1 point selection
